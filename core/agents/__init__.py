@@ -1026,3 +1026,269 @@ class PatrolAgent:
             )
 
         return with_retry(_call)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. 世界观建筑师 Agent（新增 — 从一句话设定生成完整世界观）
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _WorldBuilderSchema(BaseModel):
+    title: str
+    genre: str
+    world_background: str = ""           # 世界观背景
+    core_power_system: str = ""          # 核心力量体系
+    factions: list[dict[str, str]] = Field(default_factory=list)  # 势力
+    locations: list[dict[str, str]] = Field(default_factory=list)  # 地点
+    characters: list[dict[str, str]] = Field(default_factory=list) # 角色
+    world_rules: list[str] = Field(default_factory=list)           # 世界规则
+    plot_hooks: list[str] = Field(default_factory=list)            # 情节钩子
+    themes: list[str] = Field(default_factory=list)                # 主题
+    market_positioning: str = ""         # 市场定位
+
+
+class WorldBuilderAgent:
+    """世界观建筑师：从一句话设定自动生成完整世界观"""
+
+    def __init__(self, llm: LLMProvider):
+        self.llm = llm
+
+    def build_world(
+        self,
+        premise: str,
+        genre: str = "玄幻",
+        target_chapters: int = 90,
+        style_preference: str = "",
+    ) -> _WorldBuilderSchema:
+        style_section = f"\n## 风格偏好\n{style_preference}" if style_preference else ""
+
+        prompt = f"""你是资深网文世界观设计师。根据以下一句话设定，生成完整的世界观体系。
+
+## 一句话设定
+{premise}
+
+## 题材
+{genre}
+
+## 目标章数
+{target_chapters} 章
+{style_section}
+
+## 输出要求（JSON）
+{{
+  "title": "书名（吸引眼球，4-8字）",
+  "genre": "{genre}",
+  "world_background": "300字以内的世界观背景设定",
+  "core_power_system": "核心力量体系描述（修炼等级/能力分类/进阶条件）",
+  "factions": [
+    {{"name": "势力名", "description": "100字描述", "power_level": "强/中/弱", "relationship": "与主角的关系"}}
+  ],
+  "locations": [
+    {{"name": "地点名", "description": "50字描述", "faction": "所属势力", "dramatic_potential": "戏剧潜力"}}
+  ],
+  "characters": [
+    {{
+      "name": "角色名",
+      "role": "protagonist/antagonist/impact/guardian/sidekick/love_interest/supporting",
+      "external_goal": "外部目标",
+      "internal_need": "内在渴望",
+      "personality": "3个性格关键词",
+      "obstacle": "主要障碍",
+      "arc": "positive/negative/flat/corrupt",
+      "behavior_lock": "绝对不做的事",
+      "backstory": "50字背景"
+    }}
+  ],
+  "world_rules": ["规则1", "规则2"],
+  "plot_hooks": ["可展开的情节线索1", "情节线索2"],
+  "themes": ["主题1", "主题2"],
+  "market_positioning": "目标读者和市场定位分析（100字）"
+}}
+
+要求：
+- 角色至少5个（主角/反派/冲击者/守护者/伙伴各1）
+- 势力至少3个，互有矛盾
+- 地点至少4个，覆盖故事主要场景
+- 世界规则至少3条，确保逻辑自洽
+- 力量体系必须有明确的等级划分和进阶条件
+
+只输出 JSON。"""
+
+        def _call() -> _WorldBuilderSchema:
+            resp = self.llm.complete([
+                LLMMessage("system", "你是资深网文世界观设计师，精通Dramatica叙事理论。只输出JSON。"),
+                LLMMessage("user", prompt),
+            ])
+            return parse_llm_json(resp.content, _WorldBuilderSchema, "build_world")
+
+        return with_retry(_call)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. 大纲规划 Agent（新增 — 生成三幕结构 + 章纲）
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _ChapterOutlineItemSchema(BaseModel):
+    chapter_number: int
+    title: str
+    summary: str
+    emotional_arc: dict[str, str] = Field(default_factory=dict)
+    mandatory_tasks: list[str] = Field(default_factory=list)
+    dramatic_function: str = "event"  # setup/inciting/turning/midpoint/crisis/climax/reveal/decision/consequence/transition
+    thread_id: str = "thread_main"
+    pov_character_id: str = ""
+    target_words: int = 2000
+
+
+class _OutlinePlanSchema(BaseModel):
+    title: str
+    genre: str
+    three_act_structure: dict[str, str] = Field(default_factory=dict)  # act1/act2/act3 描述
+    act_boundaries: dict[str, list[int]] = Field(default_factory=dict)  # 每幕的章节范围
+    main_conflict: str = ""
+    theme: str = ""
+    character_arcs: dict[str, str] = Field(default_factory=dict)
+    chapters: list[_ChapterOutlineItemSchema] = Field(default_factory=list)
+    tension_curve: list[int] = Field(default_factory=list)  # 每章张力值 1-10
+    subplot_plans: list[dict[str, str]] = Field(default_factory=list)
+
+
+class OutlinePlannerAgent:
+    """大纲规划师：从世界观生成三幕结构大纲 + 逐章规划"""
+
+    def __init__(self, llm: LLMProvider):
+        self.llm = llm
+
+    def plan_outline(
+        self,
+        world_context: str,
+        characters_json: str,
+        genre: str = "玄幻",
+        target_chapters: int = 90,
+        target_words_per_chapter: int = 2000,
+    ) -> _OutlinePlanSchema:
+
+        prompt = f"""你是精通Dramatica叙事理论的大纲规划师。根据世界观和角色信息，生成完整的小说大纲。
+
+## 世界观
+{world_context[:2000]}
+
+## 角色信息
+{characters_json[:2000]}
+
+## 需求
+- 题材：{genre}
+- 目标总章数：{target_chapters} 章
+- 每章字数：{target_words_per_chapter} 字
+
+## 三幕结构要求
+- 第一幕（建立）：约{int(target_chapters*0.25)}章，建立世界/角色/规则，激励事件打破平衡
+- 第二幕（对抗）：约{int(target_chapters*0.50)}章，冲突升级/中点转折/危机最低点
+- 第三幕（解决）：约{int(target_chapters*0.25)}章，高潮对决/揭示/结局
+
+## 输出要求（JSON）
+{{
+  "title": "书名",
+  "genre": "{genre}",
+  "three_act_structure": {{
+    "act1": "第一幕概述（50字）",
+    "act2": "第二幕概述（50字）",
+    "act3": "第三幕概述（50字）"
+  }},
+  "act_boundaries": {{
+    "act1": [1, {int(target_chapters*0.25)}],
+    "act2": [{int(target_chapters*0.25)+1}, {int(target_chapters*0.75)}],
+    "act3": [{int(target_chapters*0.75)+1}, {target_chapters}]
+  }},
+  "main_conflict": "核心冲突一句话",
+  "theme": "核心主题",
+  "character_arcs": {{"角色名": "成长弧线描述"}},
+  "chapters": [
+    {{
+      "chapter_number": 1,
+      "title": "章节标题",
+      "summary": "100字章节摘要",
+      "emotional_arc": {{"start": "开始情绪", "end": "结束情绪"}},
+      "mandatory_tasks": ["必须完成的任务"],
+      "dramatic_function": "setup",
+      "thread_id": "thread_main",
+      "pov_character_id": "主角ID",
+      "target_words": {target_words_per_chapter}
+    }}
+  ],
+  "tension_curve": [张力值列表，每章1-10],
+  "subplot_plans": [{{"name": "支线名", "thread_id": "支线ID", "description": "支线描述"}}]
+}}
+
+要求：
+- 每章的dramatic_function必须从以下选择：setup/inciting/turning/midpoint/crisis/climax/reveal/decision/consequence/transition
+- 张力曲线要有起伏，不能一直平或一直高
+- 至少规划2条支线
+- 章节标题要吸引人
+
+只输出 JSON（前{min(target_chapters, 30)}章即可）。"""
+
+        def _call() -> _OutlinePlanSchema:
+            resp = self.llm.complete([
+                LLMMessage("system", "你是精通Dramatica叙事理论的大纲规划师。只输出JSON。"),
+                LLMMessage("user", prompt),
+            ])
+            return parse_llm_json(resp.content, _OutlinePlanSchema, "plan_outline")
+
+        return with_retry(_call)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 9. 市场分析 Agent（新增 — 分析目标读者偏好，调整写作风格）
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _MarketAnalysisSchema(BaseModel):
+    target_audience: str = ""         # 目标读者画像
+    reader_preferences: list[str] = Field(default_factory=list)  # 读者偏好
+    genre_trends: list[str] = Field(default_factory=list)         # 题材趋势
+    recommended_style: str = ""       # 推荐文风
+    recommended_hooks: list[str] = Field(default_factory=list)    # 推荐的开篇钩子
+    competitive_analysis: str = ""    # 竞品分析
+    style_guide: str = ""             # 写作风格指南（可直接注入prompt）
+
+
+class MarketAnalyzerAgent:
+    """市场分析师：分析目标读者偏好，输出风格指南"""
+
+    def __init__(self, llm: LLMProvider):
+        self.llm = llm
+
+    def analyze(
+        self,
+        genre: str,
+        premise: str,
+        target_platform: str = "番茄小说",
+    ) -> _MarketAnalysisSchema:
+
+        prompt = f"""你是网文市场分析师，精通{target_platform}平台的读者偏好和题材趋势。
+
+## 小说信息
+- 题材：{genre}
+- 设定：{premise}
+- 目标平台：{target_platform}
+
+## 输出要求（JSON）
+{{
+  "target_audience": "目标读者画像（年龄/性别/阅读习惯）",
+  "reader_preferences": ["该题材读者最看重的3-5个元素"],
+  "genre_trends": ["当前该题材的3-5个流行趋势"],
+  "recommended_style": "推荐的文风方向（100字）",
+  "recommended_hooks": ["推荐的3种开篇钩子类型"],
+  "competitive_analysis": "同类热门作品的共同特点（100字）",
+  "style_guide": "可直接注入写手prompt的风格指南（200字，具体可操作）"
+}}
+
+只输出 JSON。"""
+
+        def _call() -> _MarketAnalysisSchema:
+            resp = self.llm.complete([
+                LLMMessage("system", "你是网文市场分析师，精通各大平台读者数据。只输出JSON。"),
+                LLMMessage("user", prompt),
+            ])
+            return parse_llm_json(resp.content, _MarketAnalysisSchema, "analyze")
+
+        return with_retry(_call)

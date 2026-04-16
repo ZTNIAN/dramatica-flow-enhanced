@@ -707,5 +707,235 @@ def doctor(
             console.print(f"  · {b}")
 
 
+
+
+# ── df worldbuild ─────────────────────────────────────────────────────────────
+
+@app.command()
+def worldbuild(
+    premise: str = typer.Argument(..., help="一句话设定"),
+    genre: str = typer.Option("玄幻", "--genre", "-g", help="题材"),
+    chapters: int = typer.Option(90, "--chapters", "-c", help="目标章数"),
+    style: str = typer.Option("", "--style", "-s", help="风格偏好"),
+    project: str = typer.Option(".", "--project", "-p", help="项目目录"),
+):
+    """从一句话设定自动生成完整世界观"""
+    from core.agents import WorldBuilderAgent
+
+    console.print(Panel("[bold cyan]🏗️ 世界观建筑师[/bold cyan]"))
+    console.print(f"设定：{premise}")
+    console.print(f"题材：{genre} | 目标：{chapters} 章\n")
+
+    llm = _llm()
+    agent = WorldBuilderAgent(llm)
+
+    with console.status("[bold green]AI 正在构建世界观..."):
+        result = agent.build_world(premise, genre, chapters, style)
+
+    # 保存到项目
+    books_dir = Path(project) / "books" / result.title.replace(" ", "_")
+    setup_dir = books_dir / "setup"
+    setup_dir.mkdir(parents=True, exist_ok=True)
+
+    # 写入 JSON 文件
+    def save_json(filename, data):
+        p = setup_dir / filename
+        p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        console.print(f"  ✓ {filename}")
+        return p
+
+    # 角色
+    characters = {}
+    for c in result.characters:
+        cid = c.get("name", "unknown").lower().replace(" ", "_")
+        characters[cid] = {
+            "id": cid, "name": c.get("name", ""),
+            "need": {"external": c.get("external_goal", ""), "internal": c.get("internal_need", "")},
+            "obstacles": [{"type": "antagonist", "description": c.get("obstacle", ""), "mechanism": ""}],
+            "worldview": {"power": "seeks", "trust": "selective", "cop": "fight"},
+            "arc": c.get("arc", "positive"),
+            "profile": c.get("backstory", ""),
+            "behavior_lock": [c.get("behavior_lock", "")],
+            "role": c.get("role", "supporting"),
+            "personality": c.get("personality", "").split("、") if "、" in c.get("personality", "") else [c.get("personality", "")],
+            "backstory": c.get("backstory", ""),
+        }
+    save_json("characters.json", characters)
+
+    # 地点
+    locations = {}
+    for loc in result.locations:
+        lid = loc.get("name", "unknown").lower().replace(" ", "_")
+        locations[lid] = {
+            "id": lid, "name": loc.get("name", ""),
+            "description": loc.get("description", ""),
+            "faction": loc.get("faction", ""),
+            "dramatic_potential": loc.get("dramatic_potential", ""),
+        }
+    save_json("locations.json", locations)
+
+    # 势力
+    factions = {}
+    for fac in result.factions:
+        fid = fac.get("name", "unknown").lower().replace(" ", "_")
+        factions[fid] = {
+            "id": fid, "name": fac.get("name", ""),
+            "description": fac.get("description", ""),
+            "power_level": fac.get("power_level", "medium"),
+        }
+    save_json("factions.json", factions)
+
+    # 世界规则
+    save_json("world_rules.json", {"rules": result.world_rules})
+
+    # 种子事件
+    events = []
+    for i, hook in enumerate(result.plot_hooks[:5]):
+        events.append({
+            "id": f"seed_{i+1}", "description": hook,
+            "dramatic_function": "inciting", "involved_characters": [],
+        })
+    save_json("seed_events.json", events)
+
+    # 显示摘要
+    console.print(f"\n[bold green]✓ 世界观构建完成！[/bold green]")
+    console.print(f"  书名：[bold]{result.title}[/bold]")
+    console.print(f"  角色：{len(result.characters)} 个")
+    console.print(f"  势力：{len(result.factions)} 个")
+    console.print(f"  地点：{len(result.locations)} 个")
+    console.print(f"  情节钩子：{len(result.plot_hooks)} 条")
+    console.print(f"  保存位置：{setup_dir}")
+    console.print(f"\n下一步：df outline --book {result.title.replace(' ', '_')}")
+
+
+# ── df outline ────────────────────────────────────────────────────────────────
+
+@app.command()
+def outline(
+    book: str = typer.Option("", "--book", "-b", help="书籍目录名（默认当前目录唯一书籍）"),
+    chapters: int = typer.Option(30, "--chapters", "-c", help="本次生成章数"),
+    project: str = typer.Option(".", "--project", "-p", help="项目目录"),
+):
+    """从世界观自动生成三幕结构大纲 + 章纲"""
+    from core.agents import OutlinePlannerAgent
+
+    books_dir = Path(project) / "books"
+    if not book:
+        dirs = [d for d in books_dir.iterdir() if d.is_dir()] if books_dir.exists() else []
+        if len(dirs) == 1:
+            book = dirs[0].name
+        else:
+            console.print("[red]✗ 请用 --book 指定书籍目录[/red]")
+            raise typer.Exit(1)
+
+    book_dir = books_dir / book
+    setup_dir = book_dir / "setup"
+
+    # 读取世界观数据
+    world_parts = []
+    for f in ["characters.json", "locations.json", "factions.json", "world_rules.json"]:
+        p = setup_dir / f
+        if p.exists():
+            world_parts.append(f"## {f}\n{p.read_text(encoding='utf-8')[:500]}")
+    world_context = "\n\n".join(world_parts)
+
+    characters_json = (setup_dir / "characters.json").read_text(encoding="utf-8") if (setup_dir / "characters.json").exists() else "{}"
+
+    # 读取配置
+    config_path = book_dir / "config.json"
+    genre = "玄幻"
+    target_words = 2000
+    if config_path.exists():
+        cfg = json.loads(config_path.read_text(encoding="utf-8"))
+        genre = cfg.get("genre", genre)
+        target_words = cfg.get("target_words_per_chapter", target_words)
+
+    console.print(Panel(f"[bold cyan]📋 大纲规划师[/bold cyan] — {book}"))
+    console.print(f"题材：{genre} | 本次生成：{chapters} 章 | 每章：{target_words} 字\n")
+
+    llm = _llm()
+    agent = OutlinePlannerAgent(llm)
+
+    with console.status("[bold green]AI 正在规划大纲..."):
+        result = agent.plan_outline(world_context, characters_json, genre, chapters, target_words)
+
+    # 保存大纲
+    outlines_dir = book_dir / "outlines"
+    outlines_dir.mkdir(parents=True, exist_ok=True)
+
+    outline_data = result.model_dump() if hasattr(result, 'model_dump') else vars(result)
+    outline_path = outlines_dir / "full_outline.json"
+    outline_path.write_text(json.dumps(outline_data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # 生成章纲文件
+    for ch in result.chapters:
+        ch_file = outlines_dir / f"ch_{ch.chapter_number:03d}.json"
+        ch_data = ch.model_dump() if hasattr(ch, 'model_dump') else vars(ch)
+        ch_file.write_text(json.dumps(ch_data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # 显示摘要
+    console.print(f"[bold green]✓ 大纲生成完成！[/bold green]")
+    console.print(f"  书名：{result.title}")
+    console.print(f"  核心冲突：{result.main_conflict}")
+    console.print(f"  主题：{result.theme}")
+    console.print(f"  章节数：{len(result.chapters)}")
+    console.print(f"  支线数：{len(result.subplot_plans)}")
+    console.print(f"  保存位置：{outlines_dir}")
+
+    # 显示前5章预览
+    table = Table(title="章纲预览", box=box.ROUNDED)
+    table.add_column("章", style="cyan", width=4)
+    table.add_column("标题", style="bold")
+    table.add_column("功能", style="yellow")
+    table.add_column("情感弧", style="magenta")
+    table.add_column("张力", style="red")
+    for ch in result.chapters[:10]:
+        tension = result.tension_curve[ch.chapter_number - 1] if ch.chapter_number - 1 < len(result.tension_curve) else "?"
+        ea = ch.emotional_arc
+        arc_str = f"{ea.get('start','')}→{ea.get('end','')}" if ea else ""
+        table.add_row(str(ch.chapter_number), ch.title, ch.dramatic_function, arc_str, str(tension))
+    console.print(table)
+
+    console.print(f"\n下一步：df write")
+
+
+# ── df market ─────────────────────────────────────────────────────────────────
+
+@app.command()
+def market(
+    genre: str = typer.Argument(..., help="题材"),
+    premise: str = typer.Option("", "--premise", "-p", help="一句话设定"),
+    platform: str = typer.Option("番茄小说", "--platform", help="目标平台"),
+):
+    """市场分析：分析目标读者偏好，输出风格指南"""
+    from core.agents import MarketAnalyzerAgent
+
+    if not premise:
+        premise = f"{genre}题材网文"
+
+    console.print(Panel(f"[bold cyan]📊 市场分析[/bold cyan] — {genre} / {platform}"))
+
+    llm = _llm()
+    agent = MarketAnalyzerAgent(llm)
+
+    with console.status("[bold green]AI 正在分析市场..."):
+        result = agent.analyze(genre, premise, platform)
+
+    console.print(f"\n[bold]目标读者：[/bold]{result.target_audience}")
+    console.print(f"\n[bold]读者偏好：[/bold]")
+    for p in result.reader_preferences:
+        console.print(f"  · {p}")
+    console.print(f"\n[bold]题材趋势：[/bold]")
+    for t in result.genre_trends:
+        console.print(f"  · {t}")
+    console.print(f"\n[bold]推荐文风：[/bold]{result.recommended_style}")
+    console.print(f"\n[bold]推荐开篇钩子：[/bold]")
+    for h in result.recommended_hooks:
+        console.print(f"  · {h}")
+    console.print(f"\n[bold]竞品分析：[/bold]{result.competitive_analysis}")
+    console.print(f"\n[bold green]风格指南（可注入prompt）：[/bold green]")
+    console.print(Panel(result.style_guide, title="Style Guide"))
+
+
 if __name__ == "__main__":
     app()
