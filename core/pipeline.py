@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from .agents import (
     ArchitectAgent, ArchitectBlueprint,
     WriterAgent, WriterOutput,
+    PatrolAgent, PatrolReport,
     AuditorAgent, AuditReport, AuditIssue,
     ReviserAgent, ReviseResult,
     SummaryAgent,
@@ -48,6 +49,10 @@ class PipelineResult:
     thread_id: str = ""
     pov_character_id: str = ""
     dormancy_warnings: list[str] = field(default_factory=list)
+    # 增强：巡查报告 + 返工监控
+    patrol_report: PatrolReport | None = None
+    patrol_rejected: bool = False
+    total_rework_count: int = 0  # 总返工次数（含巡查+审计）
 
 
 class WritingPipeline:
@@ -73,7 +78,7 @@ class WritingPipeline:
     [状态更新] 结算表 → world_state.json + current_state.md
     """
 
-    MAX_REVISE_ROUNDS = 2
+    MAX_REVISE_ROUNDS = 3
 
     def __init__(
         self,
@@ -87,6 +92,7 @@ class WritingPipeline:
         validator: PostWriteValidator,
         protagonist: Character,
         all_characters: list[Character],
+        patrol: PatrolAgent | None = None,  # 增强：巡查者（可选）
     ):
         self.sm = state_manager
         self.architect = architect
@@ -98,6 +104,7 @@ class WritingPipeline:
         self.validator = validator
         self.protagonist = protagonist
         self.all_characters = all_characters
+        self.patrol = patrol  # 增强：巡查者（可选）
 
     def run(
         self,
@@ -220,6 +227,39 @@ class WritingPipeline:
             fix_result = self.reviser.revise(current_content, error_issues, mode="spot-fix")
             current_content = fix_result.content
 
+        # ── 3.5 巡查者快速扫描（增强）────────────────────────────────────────
+        patrol_report = None
+        patrol_rejected = False
+        total_rework = 0
+
+        if self.patrol:
+            log("巡查者快速扫描...")
+            patrol_report = self.patrol.quick_scan(
+                chapter_content=current_content,
+                chapter_number=ch,
+                blueprint=blueprint,
+                settlement=writer_output.settlement,
+            )
+            if not patrol_report.passed:
+                patrol_rejected = True
+                total_rework += 1
+                log(f"  巡查打回：{patrol_report.conclusion}")
+                failed_items = [i for i in patrol_report.issues if i.status == "fail"]
+                if failed_items:
+                    revise_result = self.reviser.revise(
+                        original_content=current_content,
+                        issues=[AuditIssue(
+                            dimension="巡查打回",
+                            severity="critical",
+                            description=f"{i.check_item}: {i.description}",
+                            suggestion="根据巡查意见修正",
+                        ) for i in failed_items],
+                        mode="spot-fix",
+                    )
+                    current_content = revise_result.content
+            else:
+                log("  巡查通过")
+
         # ── 4. 审计 → 修订闭环 ────────────────────────────────────────────────
         log("审计员审计...")
         audit_truth_ctx = self.sm.read_truth_bundle([
@@ -243,15 +283,18 @@ class WritingPipeline:
         )
 
         revision_rounds = 0
+        if 'total_rework' not in dir():
+            total_rework = 0
         while not audit_report.passed and revision_rounds < self.MAX_REVISE_ROUNDS:
-            log(f"修订第 {revision_rounds + 1} 轮（{audit_report.critical_count} critical）...")
+            revision_rounds += 1
+            total_rework += 1
+            log(f"修订第 {revision_rounds} 轮（累计返工{total_rework}次，{audit_report.critical_count} critical）...")
             revise_result = self.reviser.revise(
                 current_content,
                 audit_report.issues,
                 mode="spot-fix",
             )
             current_content = revise_result.content
-            revision_rounds += 1
 
             audit_report = self.auditor.audit_chapter(
                 chapter_content=current_content,
@@ -343,6 +386,7 @@ class WritingPipeline:
             chapter_number=ch,
             content=current_content,
             audit_report=audit_report,
+            patrol_report=patrol_report,
             validation_passed=val_result.passed,
             revision_rounds=revision_rounds,
             causal_links=len(causal_schemas),
@@ -350,6 +394,8 @@ class WritingPipeline:
             thread_id=thread_id,
             pov_character_id=pov_character.id if pov_character else "",
             dormancy_warnings=dormancy_warnings,
+            patrol_rejected=patrol_rejected,
+            total_rework_count=total_rework,
         )
 
     # ── 多线程辅助方法 ────────────────────────────────────────────────────────

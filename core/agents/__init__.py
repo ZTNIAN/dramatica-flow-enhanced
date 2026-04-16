@@ -226,14 +226,70 @@ WRITER_SYSTEM_PROMPT = """\
 3. 每个场景必须推进叙事 OR 揭示角色，二者至少占其一
 4. 场景结尾状态必须比开始更极端（更好/更坏/意外转折）
 5. 对话要有潜台词，人物说的话和真正想说的话之间要有张力
+6. 每个场景至少使用3种感官（视觉必选+听觉/嗅觉/触觉至少2种）
+7. Show don't tell —— 用动作、物件、价格说话，禁止直接说"感到XX"
 
-## 语言规范
-- AI 标记词（仿佛/忽然/竟然/不禁/宛如/猛地/顿时）：每 3000 字各最多 1 次
-- 绝对禁止：元叙事（核心动机/叙事节奏/人物弧线）
-- 绝对禁止：报告式语言（分析了形势/从…角度来看/综合考虑）
-- 绝对禁止：作者说教（显然/不言而喻/毫无疑问）
-- 绝对禁止：集体反应套话（全场震惊/众人哗然/所有人都）
-- 破折号「——」：全书最多用 3 次，珍惜使用
+## 45条写作风格约束（必须遵守）
+
+### 去AI味（1-15）
+1. 绝对禁止：首先/其次/最后/总之/综上所述
+2. 绝对禁止：更关键的是/更奇怪的是/更有意思的是
+3. 绝对禁止：众所周知/不言而喻/毫无疑问/显而易见
+4. 绝对禁止：让我们来看看/让我们一起/一方面
+5. 绝对禁止：在这个信息爆炸的时代/在这个时代
+6. 绝对禁止：值得注意的是/需要注意的是
+7. AI标记词（仿佛/忽然/竟然/不禁/宛如/猛地/顿时）每3000字各最多1次
+8. 禁止套话模板：XX的尽头是XX / 人生就像XX / 这个世界上有两种人
+9. 禁止AI感叹句：多么XX啊 / 何等XX啊
+10. 禁止过度解释：也就是说/换句话说/简单来说
+11. 破折号「——」全书最多用3次，珍惜使用
+12. 禁止机械排序：首先...其次...最后 / 第一...第二...第三
+13. 禁止对仗句式：一方面...另一方面
+14. 禁止完美逻辑链：因为A所以B进而C最终D
+15. 句子长短交替，不要连续3句长度相近
+
+### Show Don't Tell（16-25）
+16. 禁止直接说"他感到XX"/"她很XX"/"心里很XX"
+17. 用具体动作代替情绪描述：捏碎茶杯>生气，手抖>害怕
+18. 用感官细节代替概括描写：写雨打在脸上的感觉>写"雨很大"
+19. 用物、势、制度摩擦说话，少喊口号
+20. 钱权必须落地，通过具体数值兑现
+21. 允许矛盾情感：又恨又爱、又怕又想
+22. 情感变化要有层次，不能突变
+23. 用周围人的反应侧面烘托，而非直接描写
+24. 用道具/环境暗示人物状态
+25. 每个场景至少3种感官（视觉+听觉+嗅觉/触觉）
+
+### 句式与节奏（26-35）
+26. 短句为主：60%以上为15字以内短句
+27. 允许不完整句、省略句、口语化表达
+28. 用具体数字代替"很多/大量/无数"
+29. 允许矛盾：又恨又爱、又怕又想、既紧张又兴奋
+30. 对话要像真人说话：有打断、有省略、有答非所问
+31. 每3-5段紧张后要有1-2段舒缓（张弛交替）
+32. 高潮前必须有一次舒缓（蓄力），高潮后必须有一次舒缓（喘息）
+33. 允许语言有狠劲，但不要堆砌陈词滥调
+34. 智斗高于武斗，利益交换必须成立
+35. 主角保留"非功能性时刻"（抽烟、失眠、沉默、试探）
+
+### 叙事原则（36-45）
+36. 每章至少推进一项：信息/地位/资源/伤亡/仇恨/境界
+37. 小冲突尽快兑现反馈，不要把爽点无限后置
+38. 涉及资源收益时必须落到具体数值
+39. 用动作、器物反应、局部感官制造压迫感
+40. 禁止"流水账"：不要写起床刷牙等无意义内容
+41. 禁止配角只剩三种功能：震惊、附和、送人头
+42. 反派要有自己的算盘、恐惧、筹码，不能是木桩
+43. 成功最好伴随不可逆代价
+44. 信息边界：角色不能知道他没见过的事
+45. 因果链：每个事件必须回答"因为什么→发生了什么→导致了什么"
+
+## 绝对禁止项（红线）
+- 元叙事（核心动机/叙事节奏/人物弧线）
+- 报告式语言（分析了形势/从…角度来看/综合考虑）
+- 作者说教（显然/不言而喻/毫无疑问）
+- 集体反应套话（全场震惊/众人哗然/所有人都）
+- 套话模板（XX的尽头是XX/人生就像XX）
 
 ## 写后必须输出结算表
 正文写完后，用 ===SETTLEMENT=== 分隔，输出 JSON 结算表。"""
@@ -408,6 +464,10 @@ class AuditReport:
     passed: bool
     issues: list[AuditIssue]
     overall_note: str
+    # 增强：加权评分
+    dimension_scores: dict[str, int] = field(default_factory=dict)  # 各维度得分
+    weighted_total: int = 0    # 加权总分（满分100）
+    redline_violations: list[str] = field(default_factory=list)  # 红线违规
 
     @property
     def critical_count(self) -> int:
@@ -431,8 +491,12 @@ class _AuditReportSchema(BaseModel):
     passed: bool
     issues: list[_AuditIssueSchema] = Field(default_factory=list)
     overall_note: str = ""
+    dimension_scores: dict[str, int] = Field(default_factory=dict)
+    weighted_total: int = 0
+    redline_violations: list[str] = Field(default_factory=list)
 
 
+# 原版审计维度（保留）
 AUDIT_DIMENSIONS = [
     "OOC（角色行为是否符合性格锁定，性格锁定的事绝对不能做）",
     "信息边界（角色是否知道了他不应知道的信息，信息获取是否有合理来源）",
@@ -447,6 +511,48 @@ AUDIT_DIMENSIONS = [
     "结尾钩子（章末钩子是否有效实现，是否能驱动读者继续读）",
     "跨线程一致性（多线叙事时，不同线程的角色位置/时间线/信息是否冲突）",
 ]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 增强版：9 维度加权评分 + 17 条红线一票否决
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# 加权维度定义：(名称, 权重, 检查要点)
+AUDIT_DIMENSIONS_WEIGHTED = [
+    ("逻辑自洽",   0.20, "因果链成立、反派不降智、战力不崩、信息边界"),
+    ("文笔去AI化", 0.15, "无AI标记词、无套话、短句为主、口语化、有瑕疵"),
+    ("场景构建",   0.15, "感官细节>=3种、画面感强、空间清晰、氛围到位"),
+    ("心理刻画",   0.15, "Show don't tell、情感有层次、有留白、共鸣感"),
+    ("对话质量",   0.10, "符合身份、有潜台词、有打断/省略/答非所问"),
+    ("风格一致",   0.10, "文笔统一、节奏连贯、无其他题材腔调混入"),
+    ("设定一致",   0.08, "世界观无矛盾、数值稳定、称谓一致、时间线正确"),
+    ("结构合理",   0.05, "起承转合自然、节拍完成、节奏张弛有度"),
+    ("人物OOC",    0.02, "性格连贯、行为有动机、非工具人"),
+]
+
+# 17条红线（一票否决）
+REDBLINE_VIOLATIONS = [
+    "角色严重OOC（做了性格锁定中绝对不做的事）",
+    "战力数值10倍以上跳变",
+    "重要伏笔丢失（声明回收但未落地）",
+    "风格严重污染（混入其他题材腔调超3处）",
+    "元叙事出现（核心动机/叙事节奏/人物弧线等）",
+    "报告式语言出现（分析了形势/综合考虑等）",
+    "集体反应套话出现（全场震惊/众人哗然等）",
+    "套话模板出现（XX的尽头是XX/人生就像XX）",
+    "AI感叹句出现（多么XX啊/何等XX啊）",
+    "机械排序出现（首先其次最后三连）",
+    "过度解释出现（也就是说/换句话说）",
+    "角色同时出现在不同地点（跨线程矛盾）",
+    "时间线前后矛盾",
+    "因果靠巧合推进（无前因的关键转折）",
+    "配角只剩震惊/附和/送人头三种功能",
+    "信息越界（角色知道他没见过的事）",
+    "数据通胀（资源收益无具体数值或暴涨）",
+]
+
+# 加权总分通过线
+AUDIT_PASS_TOTAL = 95      # 总分 >= 95
+AUDIT_PASS_MIN_DIM = 85    # 所有单项 >= 85
 
 
 class AuditorAgent:
@@ -483,7 +589,15 @@ class AuditorAgent:
 - 位置变化：{settlement.character_position_changes}
 - 情感变化：{settlement.emotional_changes}"""
 
+        # 原版维度（保留向后兼容）
         dimensions_str = "\n".join(f"{i+1}. {d}" for i, d in enumerate(AUDIT_DIMENSIONS))
+
+        # 增强：加权维度
+        weighted_dims_str = "\n".join(
+            f"| {name} | {int(weight*100)}% | {desc} |"
+            for name, weight, desc in AUDIT_DIMENSIONS_WEIGHTED
+        )
+        redline_str = "\n".join(f"{i+1}. {r}" for i, r in enumerate(REDBLINE_VIOLATIONS))
 
         # 正文截断（避免超 token）
         content_for_audit = chapter_content
@@ -527,6 +641,13 @@ class AuditorAgent:
 - warning：轻微节奏问题、AI 痕迹、伏笔处理不当、情感弧线偏差
 - info：可选优化建议
 
+## 增强评分维度（逐一打分 0-100）
+| 维度 | 权重 | 检查要点 |
+{weighted_dims_str}
+
+## 17条红线（一票否决，任一触发则 passed=false）
+{redline_str}
+
 ## 输出格式（严格 JSON）
 {{
   "chapter_number": {chapter_number},
@@ -540,8 +661,26 @@ class AuditorAgent:
       "suggestion": "具体修复建议"
     }}
   ],
-  "overall_note": "整体评价（1-2句话）"
+  "overall_note": "整体评价（1-2句话）",
+  "dimension_scores": {{
+    "逻辑自洽": 90,
+    "文笔去AI化": 88,
+    "场景构建": 92,
+    "心理刻画": 87,
+    "对话质量": 90,
+    "风格一致": 91,
+    "设定一致": 93,
+    "结构合理": 89,
+    "人物OOC": 95
+  }},
+  "weighted_total": 90,
+  "redline_violations": []
 }}
+
+评判规则：
+- 若 redline_violations 非空 → passed=false
+- 若 weighted_total < {AUDIT_PASS_TOTAL} → passed=false
+- 若任一 dimension_scores < {AUDIT_PASS_MIN_DIM} → passed=false
 
 只输出 JSON，不要任何说明。"""
 
@@ -566,12 +705,21 @@ class AuditorAgent:
                 )
                 for i in parsed.issues
             ]
-            passed = not any(i.severity == "critical" for i in issues)
+            # 原版判定：有 critical 则不通过
+            has_critical = any(i.severity == "critical" for i in issues)
+            # 增强判定：红线 + 加权分数
+            has_redline = len(parsed.redline_violations) > 0
+            low_total = parsed.weighted_total < AUDIT_PASS_TOTAL if parsed.weighted_total > 0 else False
+            low_dim = any(s < AUDIT_PASS_MIN_DIM for s in parsed.dimension_scores.values()) if parsed.dimension_scores else False
+            passed = not (has_critical or has_redline or low_total or low_dim)
             return AuditReport(
                 chapter_number=parsed.chapter_number,
                 passed=passed,
                 issues=issues,
                 overall_note=parsed.overall_note,
+                dimension_scores=parsed.dimension_scores,
+                weighted_total=parsed.weighted_total,
+                redline_violations=parsed.redline_violations,
             )
 
         return with_retry(_call)
@@ -755,3 +903,126 @@ class SummaryAgent:
             "---\n",
         ]
         return "".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. 巡查者 Agent（新增 — 快速扫描质量门）
+# 吸收 OpenMOSS 的 P0/P1/P2 分级巡查机制
+# ─────────────────────────────────────────────────────────────────────────────
+
+PatrolSeverity = Literal["P0", "P1", "P2"]
+
+
+@dataclass
+class PatrolIssue:
+    check_item: str
+    severity: PatrolSeverity
+    status: str           # "pass" | "fail"
+    description: str
+    risk: str = ""
+
+
+@dataclass
+class PatrolReport:
+    chapter_number: int
+    passed: bool
+    issues: list[PatrolIssue]
+    conclusion: str
+
+
+class _PatrolIssueSchema(BaseModel):
+    check_item: str
+    severity: str
+    status: str
+    description: str = ""
+    risk: str = ""
+
+
+class _PatrolReportSchema(BaseModel):
+    chapter_number: int
+    passed: bool
+    issues: list[_PatrolIssueSchema] = Field(default_factory=list)
+    conclusion: str = ""
+
+
+class PatrolAgent:
+    """巡查者：在写手和审计之间做快速扫描，P0问题直接打回"""
+
+    def __init__(self, llm: LLMProvider):
+        self.llm = llm
+
+    def quick_scan(
+        self,
+        chapter_content: str,
+        chapter_number: int,
+        blueprint: ArchitectBlueprint,
+        settlement: PostWriteSettlement,
+    ) -> PatrolReport:
+        content_for_scan = chapter_content
+        if len(chapter_content) > 4000:
+            content_for_scan = chapter_content[:2000] + "\n...[省略]...\n" + chapter_content[-1500:]
+
+        prompt = f"""\
+## 巡查任务：第 {chapter_number} 章快速扫描
+
+### P0 - 必须检查（有任何 fail 则打回）
+1. 状态卡一致：正文中的时间/地点/角色是否与蓝图一致
+   登场角色：{blueprint.pre_write_checklist.active_characters}
+   地点：{blueprint.pre_write_checklist.required_locations}
+2. 人物OOC：角色行为是否符合性格锁定
+
+### P1 - 重点检查（>=2项 fail 则打回）
+3. 伏笔管理：待回收伏笔是否有下落
+   伏笔：{blueprint.pre_write_checklist.hooks_status}
+4. 战力稳定：数值是否合理（无10倍+跳变）
+5. 风格纯度：有无其他题材腔调混入
+
+### P2 - 有时间再看
+6. 节奏健康：是否流水账
+7. 配角质量：是否工具人化
+8. 设定冲突：是否与前文矛盾
+
+### 正文（节选）
+{content_for_scan}
+
+### 写后结算表
+资源变化：{settlement.resource_changes}
+新开伏笔：{settlement.new_hooks}
+回收伏笔：{settlement.resolved_hooks}
+
+## 输出 JSON
+{{
+  "chapter_number": {chapter_number},
+  "passed": true,
+  "issues": [
+    {{"check_item": "状态卡一致", "severity": "P0", "status": "pass", "description": "", "risk": "P0"}}
+  ],
+  "conclusion": "通过 / 需修正"
+}}
+规则：P0 fail 或 P1 fail>=2 → passed=false
+只输出 JSON。"""
+
+        def _call() -> PatrolReport:
+            resp = self.llm.complete([
+                LLMMessage("system", "你是质量守门人，快速扫描找关键问题，不制造假阳性。只输出 JSON。"),
+                LLMMessage("user", prompt),
+            ])
+            parsed = parse_llm_json(resp.content, _PatrolReportSchema, "quick_scan")
+            issues = [
+                PatrolIssue(
+                    check_item=i.check_item,
+                    severity=i.severity,
+                    status=i.status,
+                    description=i.description,
+                    risk=i.risk,
+                )
+                for i in parsed.issues
+            ]
+            return PatrolReport(
+                chapter_number=parsed.chapter_number,
+                passed=parsed.passed,
+                issues=issues,
+                conclusion=parsed.conclusion,
+            )
+
+        return with_retry(_call)
