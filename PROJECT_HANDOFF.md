@@ -49,7 +49,10 @@
 - 多Agent协作平台，擅长前期设计（世界观/大纲/市场调研）
 - 4种角色：Planner/Executor/Reviewer/Patrol
 - 知识库系统 + 去AI味规则 + 95分加权评分
-- 操作手册：https://github.com/user/openmoss（用户的私有项目）
+- 操作手册：
+- - gz包：https://litter.catbox.moe/xyzwkq.gz
+- 7z包：https://litter.catbox.moe/2bmxac.7z
+
 
 ### 增强版：dramatica-flow-enhanced
 
